@@ -1,157 +1,188 @@
 import grpc
 from concurrent import futures
 import time
-import uuid
 import queue
 import threading
 import psutil
-import argparse 
+import uuid
+import argparse
 
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from generated import adaptive_sharing_pb2, adaptive_sharing_pb2_grpc
 
-# Import the generated gRPC classes
-from generated import adaptive_sharing_pb2
-from generated import adaptive_sharing_pb2_grpc
 
-# Thread-safe Queue for request handling
-request_queue = queue.Queue()
+# Constants
+METRICS_INTERVAL = 2       # Time interval for sharing metrics (in seconds)
+WINDOW_SIZE = 10           # Sliding window size for incoming request rate
 
-# Neighbor metrics dictionary
-neighbor_metrics = {}
+# Dynamic Weights Initialization
+W_QUEUE = 0.4
+W_CPU = 0.3
+W_MEMORY = 0.2
+W_RATE = 0.1
 
-# Configuration: List of neighboring servers
-neighbors = ["localhost:50052", "localhost:50053"]  # Replace with actual neighbor addresses
 
-# Weights for load calculation
-W_QUEUE = 0.5     # Weight for queue size
-W_CPU = 0.3       # Weight for CPU usage
-W_MEMORY = 0.2    # Weight for memory usage
-
-# Server Implementation
+# Adaptive Sharing Server Implementation
 class AdaptiveServerServicer(adaptive_sharing_pb2_grpc.AdaptiveServerServicer):
-    def __init__(self, server_id):
+    def __init__(self, server_id, neighbors):
         self.server_id = server_id
+        self.neighbors = neighbors
+        self.request_queue = queue.Queue()
+        self.neighbor_metrics = {}
+        self.incoming_request_times = []
+        self.lock = threading.Lock()
+
+    def calculate_load_score(self, queue_size, cpu_usage, memory_usage, request_rate):
+        """Combine real-time metrics into a single adaptive load score."""
+        return W_QUEUE * queue_size + W_CPU * cpu_usage + W_MEMORY * memory_usage + W_RATE * request_rate
+
+    def adjust_weights(self, queue_size, cpu_usage, memory_usage, request_rate):
+        """Dynamically adjust weights based on the dominance of metrics."""
+        global W_QUEUE, W_CPU, W_MEMORY, W_RATE
+        total = queue_size + cpu_usage + memory_usage + request_rate
+        if total == 0: return  # Prevent division by zero
+        W_QUEUE = queue_size / total
+        W_CPU = cpu_usage / total
+        W_MEMORY = memory_usage / total
+        W_RATE = request_rate / total
+
+    def compute_request_rate(self):
+        """Calculate incoming request rate using a sliding window."""
+        current_time = time.time()
+        self.incoming_request_times.append(current_time)
+        self.incoming_request_times = [t for t in self.incoming_request_times if t > current_time - WINDOW_SIZE]
+        return len(self.incoming_request_times) / WINDOW_SIZE
+
+    def select_least_loaded_neighbor(self):
+        """Select the neighbor with the lowest load score."""
+        min_load = float('inf')
+        best_neighbor = None
+        for neighbor, metrics in self.neighbor_metrics.items():
+            load = self.calculate_load_score(metrics['queue_size'], metrics['cpu_usage'], metrics['memory_usage'], 0)
+            if load < min_load:
+                min_load = load
+                best_neighbor = neighbor
+        return best_neighbor
+
+    def calculate_average_neighbor_load(self):
+        """Calculate the average load score across all neighbors."""
+        total_load = 0
+        count = len(self.neighbor_metrics)
+        for metrics in self.neighbor_metrics.values():
+            total_load += self.calculate_load_score(metrics['queue_size'], metrics['cpu_usage'], metrics['memory_usage'], 0)
+        return total_load / count if count > 0 else 0
 
     def HandleRequest(self, request, context):
-        request_uuid = str(uuid.uuid4())
-        print(f"Received Request ID: {request.request_id} | UUID: {request_uuid}")
-
-        current_load_score = self.calculate_load_score()
-        average_load_score = self.calculate_average_load_score()
-
-        # Adaptive forwarding logic
-        if current_load_score > 1.5 * average_load_score:
-            least_loaded_neighbor = self.get_least_loaded_neighbor()
-            if least_loaded_neighbor:
-                print(f"Forwarding Request ID: {request.request_id} to {least_loaded_neighbor}")
-                try:
-                    with grpc.insecure_channel(least_loaded_neighbor) as channel:
-                        stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
-                        response = stub.HandleRequest(request)
-                        print(f"Request ID: {request.request_id} successfully forwarded to {least_loaded_neighbor}")
-                        return response
-                except Exception as e:
-                    print(f"Failed to forward Request ID: {request.request_id} to {least_loaded_neighbor}: {e}")
-        
-        request_queue.put((request_uuid, request))
-        print(f"Enqueued Request ID: {request.request_id} | UUID: {request_uuid} | Queue Size: {request_queue.qsize()}")
-        return adaptive_sharing_pb2.ResponseMessage(uuid=request_uuid, status="Enqueued")
-
-    def ShareMetrics(self, request, context):
-        neighbor_metrics[request.server_id] = {
-            "queue_size": request.queue_size,
-            "cpu_usage": request.cpu_usage,
-            "memory_usage": request.memory_usage,
-            "last_updated": time.time()
-        }
-        print(f"Received Metrics from {request.server_id}: Queue Size {request.queue_size}, CPU {request.cpu_usage}%, Memory {request.memory_usage}%")
-        return adaptive_sharing_pb2.AckMessage(status="Metrics Received")
-
-    def get_least_loaded_neighbor(self):
-        least_loaded = None
-        min_load_score = float('inf')
-        for neighbor, metrics in neighbor_metrics.items():
-            load_score = self.calculate_combined_load(metrics['queue_size'], metrics['cpu_usage'], metrics['memory_usage'])
-            if load_score < min_load_score:
-                least_loaded = neighbor
-                min_load_score = load_score
-        return least_loaded
-
-    def calculate_load_score(self):
-        queue_size = request_queue.qsize()
-        cpu_usage = psutil.cpu_percent(interval=0.1)
+        """gRPC method to handle incoming requests."""
+        request_id = str(uuid.uuid4())
+        queue_size = self.request_queue.qsize()
+        cpu_usage = psutil.cpu_percent()
         memory_usage = psutil.virtual_memory().percent
-        return self.calculate_combined_load(queue_size, cpu_usage, memory_usage)
+        request_rate = self.compute_request_rate()
 
-    @staticmethod
-    def calculate_combined_load(queue_size, cpu_usage, memory_usage):
-        return W_QUEUE * queue_size + W_CPU * cpu_usage + W_MEMORY * memory_usage
+        # Adjust weights dynamically
+        self.adjust_weights(queue_size, cpu_usage, memory_usage, request_rate)
 
-    def calculate_average_load_score(self):
-        total_score = self.calculate_load_score()
-        num_servers = 1
-        for metrics in neighbor_metrics.values():
-            total_score += self.calculate_combined_load(metrics['queue_size'], metrics['cpu_usage'], metrics['memory_usage'])
-            num_servers += 1
-        return total_score / num_servers
+        # Calculate load score
+        current_load = self.calculate_load_score(queue_size, cpu_usage, memory_usage, request_rate)
+        average_load = self.calculate_average_neighbor_load()
 
+        print(f"Request {request.request_id}: Load={current_load:.2f}, Avg Neighbor Load={average_load:.2f}")
 
-def process_requests():
-    while True:
+        # Forward request if load exceeds threshold
+        if current_load > 1.5 * average_load:
+            neighbor = self.select_least_loaded_neighbor()
+            if neighbor:
+                print(f"Forwarding request {request.request_id} to {neighbor}")
+                try:
+                    with grpc.insecure_channel(neighbor) as channel:
+                        stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
+                        stub.HandleRequest(request)
+                        return adaptive_sharing_pb2.ResponseMessage(status="Forwarded")
+                except Exception as e:
+                    print(f"Forwarding failed: {e}")
+
+        # Process locally
+        print(f"Processing request {request.request_id} locally")
+        self.request_queue.put(request_id)
+        time.sleep(0.5)  # Simulate processing time
+        return adaptive_sharing_pb2.ResponseMessage(status="Processed")
+
+    def SendMetrics(self, request, context):
+        """Receive metrics from neighbors."""
+        print(f"Received metrics from {request.server_id}")
+        with self.lock:
+            self.neighbor_metrics[request.server_id] = {
+                "queue_size": request.queue_size,
+                "cpu_usage": request.cpu_usage,
+                "memory_usage": request.memory_usage
+            }
+        return adaptive_sharing_pb2.ResponseMessage(status="Metrics Received")
+
+    def send_metrics_to_neighbors(self):
+        """Periodically share metrics with neighbors."""
+        while True:
+            # Collect current metrics
+            metrics = {
+                "queue_size": self.request_queue.qsize(),
+                "cpu_usage": psutil.cpu_percent(),
+                "memory_usage": psutil.virtual_memory().percent,
+            }
+            
+            for neighbor in self.neighbors:
+                try:
+                    # Establish a connection with the neighbor
+                    with grpc.insecure_channel(neighbor) as channel:
+                        stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
+                        
+                        # Test the connection first (optional but improves reliability)
+                        grpc.channel_ready_future(channel).result(timeout=2)
+                        
+                        # Send the metrics message
+                        stub.SendMetrics(adaptive_sharing_pb2.MetricsMessage(
+                            server_id=self.server_id,
+                            queue_size=metrics["queue_size"],
+                            cpu_usage=metrics["cpu_usage"],
+                            memory_usage=metrics["memory_usage"]
+                        ))
+                        print(f"[SUCCESS] Sent metrics to {neighbor}")
+                except grpc.FutureTimeoutError:
+                    print(f"[TIMEOUT] Failed to connect to {neighbor} (server not ready)")
+                except Exception as e:
+                    print(f"[ERROR] Failed to send metrics to {neighbor}: {e}")
+
+            time.sleep(METRICS_INTERVAL)
+
+def check_neighbor_connections(neighbors):
+    """Test connectivity to all neighbors."""
+    for neighbor in neighbors:
         try:
-            request_uuid, request = request_queue.get(timeout=1)
-            print(f"Processing Request ID: {request.request_id} | UUID: {request_uuid}")
-            time.sleep(10)  # Simulate processing time
-            print(f"Completed Request ID: {request.request_id} | UUID: {request_uuid}")
-            request_queue.task_done()
-        except queue.Empty:
-            continue
-
-
-def send_metrics(server_id, neighbors):
-    while True:
-        for neighbor in neighbors:
-            try:
-                with grpc.insecure_channel(neighbor) as channel:
-                    stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
-                    metrics = adaptive_sharing_pb2.MetricsMessage(
-                        server_id=server_id,
-                        queue_size=request_queue.qsize(),
-                        cpu_usage=psutil.cpu_percent(interval=0.1),
-                        memory_usage=psutil.virtual_memory().percent
-                    )
-                    response = stub.ShareMetrics(metrics)
-                    print(f"Sent Metrics to {neighbor}: Queue Size {metrics.queue_size}, CPU {metrics.cpu_usage}%, Memory {metrics.memory_usage}% | Status: {response.status}")
-            except Exception as e:
-                print(f"Failed to send metrics to {neighbor}: {e}")
-        time.sleep(5)
-
+            with grpc.insecure_channel(neighbor) as channel:
+                grpc.channel_ready_future(channel).result(timeout=2)
+                print(f"[CONNECTED] Successfully connected to neighbor {neighbor}")
+        except grpc.FutureTimeoutError:
+            print(f"[WARNING] Neighbor {neighbor} is not ready (timeout)")
+        except Exception as e:
+            print(f"[ERROR] Could not connect to neighbor {neighbor}: {e}")
 
 def serve(port, neighbors):
-    server_id = f"localhost:{port}"
-    print(f"Starting server with ID: {server_id}")
-
-    # Start worker threads
-    num_workers = 5
-    print(f"Starting {num_workers} worker threads...")
-    for _ in range(num_workers):
-        threading.Thread(target=process_requests, daemon=True).start()
-
-    # Start the metrics-sharing thread
-    threading.Thread(target=send_metrics, args=(server_id, neighbors), daemon=True).start()
-
-    # Start the gRPC server
+    """Start the gRPC server."""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    adaptive_sharing_pb2_grpc.add_AdaptiveServerServicer_to_server(AdaptiveServerServicer(server_id), server)
-    server.add_insecure_port(server_id)
-    print(f"Server started. Listening on {server_id}...")
+    servicer = AdaptiveServerServicer(f"localhost:{port}", neighbors)
+    adaptive_sharing_pb2_grpc.add_AdaptiveServerServicer_to_server(servicer, server)
+    server.add_insecure_port(f"[::]:{port}")
+    print(f"Server started on port {port}")
+
+    if neighbors:
+        check_neighbor_connections(neighbors)
+
+    # Start metrics sharing in a background thread
+    threading.Thread(target=servicer.send_metrics_to_neighbors, daemon=True).start()
+
     server.start()
-    try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        print("Server shutting down.")
+    server.wait_for_termination()
 
 
 if __name__ == "__main__":
@@ -160,7 +191,4 @@ if __name__ == "__main__":
     parser.add_argument("--neighbors", nargs="*", help="List of neighbor server addresses (e.g., localhost:50052 localhost:50053)")
 
     args = parser.parse_args()
-
-    # Default to an empty list if neighbors are not provided
-    neighbors = args.neighbors if args.neighbors else []
-    serve(args.port, neighbors)
+    serve(args.port, args.neighbors if args.neighbors else [])

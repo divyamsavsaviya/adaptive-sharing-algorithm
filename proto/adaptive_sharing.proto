@@ -1,27 +1,26 @@
 syntax = "proto3";
 
 service AdaptiveServer {
-    rpc HandleRequest(RequestMessage) returns (ResponseMessage);
-    rpc ShareMetrics(MetricsMessage) returns (AckMessage);
+    // Handles incoming requests
+    rpc HandleRequest (RequestMessage) returns (ResponseMessage);
+
+    // Receives metrics from neighbor servers
+    rpc SendMetrics (MetricsMessage) returns (ResponseMessage);
 }
 
 message RequestMessage {
-    string request_id = 1;
-    string payload = 2;  // Request content
+    string request_id = 1;       // Unique identifier for the request
+    string payload = 2;          // Request payload or data
 }
 
 message ResponseMessage {
-    string uuid = 1;     // Unique ID for the request
-    string status = 2;   // Status: Processed
+    string uuid = 1;  
+    string status = 2;           // Response status: "Processed" or "Forwarded"
 }
 
 message MetricsMessage {
-    string server_id = 1;
-    int32 queue_size = 2;
-    float cpu_usage = 3;
-    float memory_usage = 4;
-}
-
-message AckMessage {
-    string status = 1;
+    string server_id = 1;        // Server ID sending the metrics
+    int32 queue_size = 2;        // Current size of the request queue
+    float cpu_usage = 3;         // Current CPU usage percentage
+    float memory_usage = 4;      // Current memory usage percentage
 }
