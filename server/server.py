@@ -6,6 +6,7 @@ import threading
 import psutil
 import uuid
 import argparse
+import csv
 
 import sys
 import os
@@ -33,6 +34,16 @@ class AdaptiveServerServicer(adaptive_sharing_pb2_grpc.AdaptiveServerServicer):
         self.neighbor_metrics = {}
         self.incoming_request_times = []
         self.lock = threading.Lock()
+        self.csv_file = f"server_metrics_{server_id.replace(':', '_')}.csv"
+
+        # Write CSV Header if file does not exist
+        if not os.path.exists(self.csv_file):
+            with open(self.csv_file, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    "Request ID", "Server ID", "Load Score", "Avg Neighbor Load",
+                    "Forwarded", "Selected Neighbor", "Queue Size", "CPU Usage", "Memory Usage"
+                ])
 
     def calculate_load_score(self, queue_size, cpu_usage, memory_usage, request_rate):
         """Combine real-time metrics into a single adaptive load score."""
@@ -89,17 +100,21 @@ class AdaptiveServerServicer(adaptive_sharing_pb2_grpc.AdaptiveServerServicer):
         current_load = self.calculate_load_score(queue_size, cpu_usage, memory_usage, request_rate)
         average_load = self.calculate_average_neighbor_load()
 
-        print(f"Request {request.request_id}: Load={current_load:.2f}, Avg Neighbor Load={average_load:.2f}")
+        forwarded = False
+        selected_neighbor = None
 
         # Forward request if load exceeds threshold
         if current_load > 1.5 * average_load:
-            neighbor = self.select_least_loaded_neighbor()
-            if neighbor:
-                print(f"Forwarding request {request.request_id} to {neighbor}")
+            selected_neighbor = self.select_least_loaded_neighbor()
+            if selected_neighbor:
+                print(f"Forwarding request {request.request_id} to {selected_neighbor}")
                 try:
-                    with grpc.insecure_channel(neighbor) as channel:
+                    with grpc.insecure_channel(selected_neighbor) as channel:
                         stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
                         stub.HandleRequest(request)
+                        forwarded = True
+                        self.log_metrics(request.request_id, current_load, average_load, forwarded,
+                                         selected_neighbor, queue_size, cpu_usage, memory_usage)
                         return adaptive_sharing_pb2.ResponseMessage(status="Forwarded")
                 except Exception as e:
                     print(f"Forwarding failed: {e}")
@@ -108,7 +123,23 @@ class AdaptiveServerServicer(adaptive_sharing_pb2_grpc.AdaptiveServerServicer):
         print(f"Processing request {request.request_id} locally")
         self.request_queue.put(request_id)
         time.sleep(0.5)  # Simulate processing time
+
+        # Log metrics
+        self.log_metrics(request.request_id, current_load, average_load, forwarded,
+                         selected_neighbor, queue_size, cpu_usage, memory_usage)
         return adaptive_sharing_pb2.ResponseMessage(status="Processed")
+    
+    
+    def log_metrics(self, request_id, load_score, avg_load, forwarded,
+                    selected_neighbor, queue_size, cpu_usage, memory_usage):
+        """Log metrics to a CSV file."""
+        with open(self.csv_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                request_id, self.server_id, round(load_score, 2),
+                round(avg_load, 2), forwarded, selected_neighbor or "N/A",
+                queue_size, round(cpu_usage, 2), round(memory_usage, 2)
+            ])
 
     def SendMetrics(self, request, context):
         """Receive metrics from neighbors."""
