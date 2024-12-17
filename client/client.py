@@ -8,7 +8,7 @@ def run():
         stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
         
         # Send a sample request
-        for i in range(5):
+        for i in range(200):
             request_id = f"Request-{i}"
             print(f"Sending Request: {request_id}")
             response = stub.HandleRequest(adaptive_sharing_pb2.RequestMessage(request_id=request_id, payload="Test Payload"))
