@@ -1,10 +1,13 @@
 import grpc
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from generated import adaptive_sharing_pb2
 from generated import adaptive_sharing_pb2_grpc
 
 def run():
     # Connect to the server
-    with grpc.insecure_channel("localhost:50051") as channel:
+    with grpc.insecure_channel("localhost:50053") as channel:
         stub = adaptive_sharing_pb2_grpc.AdaptiveServerStub(channel)
         
         # Send a sample request

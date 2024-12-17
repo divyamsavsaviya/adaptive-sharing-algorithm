@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61\x64\x61ptive_sharing.proto\"5\n\x0eRequestMessage\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x0f\n\x07payload\x18\x02 \x01(\t\"/\n\x0fResponseMessage\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"7\n\x0eMetricsMessage\x12\x11\n\tserver_id\x18\x01 \x01(\t\x12\x12\n\nqueue_size\x18\x02 \x01(\x05\"\x1c\n\nAckMessage\x12\x0e\n\x06status\x18\x01 \x01(\t2r\n\x0e\x41\x64\x61ptiveServer\x12\x32\n\rHandleRequest\x12\x0f.RequestMessage\x1a\x10.ResponseMessage\x12,\n\x0cShareMetrics\x12\x0f.MetricsMessage\x1a\x0b.AckMessageb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61\x64\x61ptive_sharing.proto\"5\n\x0eRequestMessage\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x0f\n\x07payload\x18\x02 \x01(\t\"/\n\x0fResponseMessage\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"`\n\x0eMetricsMessage\x12\x11\n\tserver_id\x18\x01 \x01(\t\x12\x12\n\nqueue_size\x18\x02 \x01(\x05\x12\x11\n\tcpu_usage\x18\x03 \x01(\x02\x12\x14\n\x0cmemory_usage\x18\x04 \x01(\x02\"\x1c\n\nAckMessage\x12\x0e\n\x06status\x18\x01 \x01(\t2r\n\x0e\x41\x64\x61ptiveServer\x12\x32\n\rHandleRequest\x12\x0f.RequestMessage\x1a\x10.ResponseMessage\x12,\n\x0cShareMetrics\x12\x0f.MetricsMessage\x1a\x0b.AckMessageb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,9 +36,9 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_RESPONSEMESSAGE']._serialized_start=81
   _globals['_RESPONSEMESSAGE']._serialized_end=128
   _globals['_METRICSMESSAGE']._serialized_start=130
-  _globals['_METRICSMESSAGE']._serialized_end=185
-  _globals['_ACKMESSAGE']._serialized_start=187
-  _globals['_ACKMESSAGE']._serialized_end=215
-  _globals['_ADAPTIVESERVER']._serialized_start=217
-  _globals['_ADAPTIVESERVER']._serialized_end=331
+  _globals['_METRICSMESSAGE']._serialized_end=226
+  _globals['_ACKMESSAGE']._serialized_start=228
+  _globals['_ACKMESSAGE']._serialized_end=256
+  _globals['_ADAPTIVESERVER']._serialized_start=258
+  _globals['_ADAPTIVESERVER']._serialized_end=372
 # @@protoc_insertion_point(module_scope)

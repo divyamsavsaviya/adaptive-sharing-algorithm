@@ -18,6 +18,8 @@ message ResponseMessage {
 message MetricsMessage {
     string server_id = 1;
     int32 queue_size = 2;
+    float cpu_usage = 3;
+    float memory_usage = 4;
 }
 
 message AckMessage {
