@@ -39,12 +39,23 @@ class AdaptiveServerStub(object):
                 request_serializer=adaptive__sharing__pb2.RequestMessage.SerializeToString,
                 response_deserializer=adaptive__sharing__pb2.ResponseMessage.FromString,
                 _registered_method=True)
+        self.ShareMetrics = channel.unary_unary(
+                '/AdaptiveServer/ShareMetrics',
+                request_serializer=adaptive__sharing__pb2.MetricsMessage.SerializeToString,
+                response_deserializer=adaptive__sharing__pb2.AckMessage.FromString,
+                _registered_method=True)
 
 
 class AdaptiveServerServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def HandleRequest(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ShareMetrics(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -57,6 +68,11 @@ def add_AdaptiveServerServicer_to_server(servicer, server):
                     servicer.HandleRequest,
                     request_deserializer=adaptive__sharing__pb2.RequestMessage.FromString,
                     response_serializer=adaptive__sharing__pb2.ResponseMessage.SerializeToString,
+            ),
+            'ShareMetrics': grpc.unary_unary_rpc_method_handler(
+                    servicer.ShareMetrics,
+                    request_deserializer=adaptive__sharing__pb2.MetricsMessage.FromString,
+                    response_serializer=adaptive__sharing__pb2.AckMessage.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -86,6 +102,33 @@ class AdaptiveServer(object):
             '/AdaptiveServer/HandleRequest',
             adaptive__sharing__pb2.RequestMessage.SerializeToString,
             adaptive__sharing__pb2.ResponseMessage.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ShareMetrics(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/AdaptiveServer/ShareMetrics',
+            adaptive__sharing__pb2.MetricsMessage.SerializeToString,
+            adaptive__sharing__pb2.AckMessage.FromString,
             options,
             channel_credentials,
             insecure,

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 service AdaptiveServer {
     rpc HandleRequest(RequestMessage) returns (ResponseMessage);
+    rpc ShareMetrics(MetricsMessage) returns (AckMessage);
 }
 
 message RequestMessage {
@@ -12,4 +13,13 @@ message RequestMessage {
 message ResponseMessage {
     string uuid = 1;     // Unique ID for the request
     string status = 2;   // Status: Processed
+}
+
+message MetricsMessage {
+    string server_id = 1;
+    int32 queue_size = 2;
+}
+
+message AckMessage {
+    string status = 1;
 }
