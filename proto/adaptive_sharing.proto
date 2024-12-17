@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+service AdaptiveServer {
+    rpc HandleRequest(RequestMessage) returns (ResponseMessage);
+}
+
+message RequestMessage {
+    string request_id = 1;
+    string payload = 2;  // Request content
+}
+
+message ResponseMessage {
+    string uuid = 1;     // Unique ID for the request
+    string status = 2;   // Status: Processed
+}
