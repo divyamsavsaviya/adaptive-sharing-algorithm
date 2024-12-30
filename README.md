@@ -1,4 +1,4 @@
-# Running the Adaptive Sharding Project
+# Running the Project
 
 ## Prerequisites
 
@@ -10,13 +10,13 @@
 1. Unzip the project archive:
 
    ```bash
-   unzip adaptive_sharding_project.zip
+   unzip project.zip
    ```
 
 2. Change to the project directory:
 
    ```bash
-   cd adaptive_sharding_project
+   cd project
    ```
 
 3. Install the required dependencies:
@@ -47,6 +47,6 @@
    python client/client.py
    ```
 
-   The client will send a series of requests to the server cluster, and the adaptive sharding algorithm will distribute the requests among the servers.
+   The client will send a series of requests to the server cluster, and the adaptive sharing algorithm will distribute the requests among the servers.
 
 2. Monitor the server terminals to see the request handling and forwarding behavior.
